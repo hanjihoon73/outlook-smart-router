@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useMsal } from "@azure/msal-react";
-import { getAccessToken, getMailFolders, createMessageRule } from '../api/graph';
+import { getAccessToken, getMailFolders, createMessageRule, deleteMessageRule } from '../api/graph';
 import { compileToGraphRules } from '../utils/compiler';
+import { supabase } from '../api/supabase';
 
 // DNF 방식의 그룹 관리를 위한 데이터 구조
 type Field = 'from' | 'subject' | 'body';
@@ -19,22 +20,33 @@ interface ConditionGroup {
   conditions: Condition[]; // 이 그룹 내의 조건들은 AND로 묶임
 }
 
-export const RuleBuilder: React.FC = () => {
+interface RuleBuilderProps {
+  rule?: any;
+  onSaveSuccess: () => void;
+  userEmail: string | undefined;
+}
+
+export const RuleBuilder: React.FC<RuleBuilderProps> = ({ rule, onSaveSuccess, userEmail }) => {
   const { instance } = useMsal();
   const [folders, setFolders] = useState<any[]>([]);
   const [loadingFolders, setLoadingFolders] = useState<boolean>(true);
   const [folderError, setFolderError] = useState<string>('');
   const [isSaving, setIsSaving] = useState<boolean>(false);
 
-  const [groups, setGroups] = useState<ConditionGroup[]>([
-    {
-      id: 'group-1',
-      conditions: [{ id: 'cond-1', field: 'from', operator: 'contains', value: '' }]
-    }
-  ]);
+  // 규칙 이름 상태
+  const [ruleName, setRuleName] = useState<string>(rule?.name || '');
+
+  const [groups, setGroups] = useState<ConditionGroup[]>(
+    rule?.groups || [
+      {
+        id: 'group-1',
+        conditions: [{ id: 'cond-1', field: 'from', operator: 'contains', value: '' }]
+      }
+    ]
+  );
 
   // 폴더 이동 액션 상태
-  const [targetFolder, setTargetFolder] = useState<string>('');
+  const [targetFolder, setTargetFolder] = useState<string>(rule?.target_folder_id || '');
 
   // 컴포넌트 마운트 시 실제 사용자의 메일 폴더 목록 불러오기
   useEffect(() => {
@@ -105,6 +117,11 @@ export const RuleBuilder: React.FC = () => {
   };
 
   const handleSaveRule = async () => {
+    if (!ruleName.trim()) {
+      alert("규칙 이름을 입력해 주세요.");
+      return;
+    }
+
     try {
       setIsSaving(true);
       // 1. UI 상태를 MS Graph API가 이해할 수 있는 순수 AND 규칙 배열로 변환
@@ -118,12 +135,48 @@ export const RuleBuilder: React.FC = () => {
       // 2. 액세스 토큰 획득
       const token = await getAccessToken(instance);
 
-      // 3. 변환된 모든 규칙을 서버로 전송
-      for (const rulePayload of graphRules) {
-        await createMessageRule(token, rulePayload);
+      // 3. (규칙 수정 시) MS 서버에 있던 기존 규칙 삭제
+      if (rule && rule.graph_rule_ids && rule.graph_rule_ids.length > 0) {
+        for (const oldGraphId of rule.graph_rule_ids) {
+          try {
+            await deleteMessageRule(token, oldGraphId);
+          } catch (e) {
+            console.warn(`이전 MS Graph 규칙 삭제 실패 (ID: ${oldGraphId}):`, e);
+          }
+        }
       }
 
-      alert("🎉 메일 분류 규칙이 성공적으로 동기화되었습니다!");
+      // 4. 변환된 모든 규칙을 MS 서버로 전송하고 생성된 ID들을 수집합니다.
+      const generatedGraphIds: string[] = [];
+      for (const rulePayload of graphRules) {
+        // 규칙 이름에 그룹 인덱스를 붙여서 고유하게 만듦
+        const payloadWithName = { ...rulePayload, displayName: `[SmartRouter] ${ruleName}` };
+        const createdRule = await createMessageRule(token, payloadWithName);
+        if (createdRule && createdRule.id) {
+          generatedGraphIds.push(createdRule.id);
+        }
+      }
+
+      // 5. Supabase DB에 저장
+      const targetFolderName = folders.find(f => f.id === targetFolder)?.displayName || '';
+      const dbPayload = {
+        user_email: userEmail,
+        name: ruleName,
+        groups: groups,
+        target_folder_id: targetFolder,
+        target_folder_name: targetFolderName,
+        is_active: true,
+        graph_rule_ids: generatedGraphIds // 토글 동작을 위해 ID 목록 저장
+      };
+
+      if (rule && rule.id) {
+        await supabase.from('mail_rules').update(dbPayload).eq('id', rule.id);
+      } else {
+        await supabase.from('mail_rules').insert([dbPayload]);
+      }
+
+      alert("🎉 메일 분류 규칙이 성공적으로 저장 및 동기화되었습니다!");
+      onSaveSuccess();
       
     } catch (error: any) {
       console.error("규칙 저장 실패:", error);
@@ -134,16 +187,28 @@ export const RuleBuilder: React.FC = () => {
   };
 
   return (
-    <div className="w-full glass-panel rounded-2xl p-6 md:p-8 animate-fade-in text-left">
-      <div className="mb-8 border-b border-white/10 pb-4">
-        <h2 className="text-2xl font-bold text-white tracking-tight flex items-center gap-2">
+    <div className="w-full glass-panel rounded-2xl p-6 md:p-8 animate-fade-in text-left flex flex-col h-full">
+      <div className="mb-6 border-b border-white/10 pb-6">
+        <h2 className="text-2xl font-bold text-white tracking-tight flex items-center gap-2 mb-4">
           <svg className="w-6 h-6 text-brand-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
           </svg>
-          고급 메일 분류 규칙 만들기
+          {rule ? '분류 규칙 편집' : '새 고급 분류 규칙 만들기'}
         </h2>
-        <p className="text-sm text-slate-400 mt-2">
+        
+        <div className="flex items-center gap-4 bg-slate-800/50 p-4 rounded-xl border border-white/5">
+          <label className="text-slate-300 font-bold whitespace-nowrap">규칙 이름</label>
+          <input 
+            type="text" 
+            value={ruleName}
+            onChange={(e) => setRuleName(e.target.value)}
+            placeholder="예: 결제 영수증 알림 모음"
+            className="flex-1 bg-slate-900 border border-slate-700 text-slate-100 rounded-lg px-4 py-2 focus:ring-2 focus:ring-brand-500 outline-none transition-all"
+          />
+        </div>
+        
+        <p className="text-sm text-slate-400 mt-4">
           각 박스 안의 조건들은 <strong>'그리고(AND)'</strong>로 결합되며, 박스와 박스 사이는 <strong>'또는(OR)'</strong>로 결합됩니다.
         </p>
       </div>
@@ -188,6 +253,8 @@ export const RuleBuilder: React.FC = () => {
                         className="bg-slate-900 border border-slate-700 text-sm text-slate-200 rounded-lg px-3 py-2 focus:ring-2 focus:ring-brand-500 outline-none transition-all"
                       >
                         <option value="from">보낸 사람</option>
+                        <option value="to">받는 사람</option>
+                        <option value="cc">참조</option>
                         <option value="subject">제목</option>
                         <option value="body">본문</option>
                       </select>
@@ -256,9 +323,9 @@ export const RuleBuilder: React.FC = () => {
         </button>
       </div>
 
-      {/* 실행할 액션 (폴더 이동) 섹션 */}
-      <div className="mt-12 pt-8 border-t-2 border-white/5 animate-slide-up" style={{ animationDelay: '0.1s' }}>
-        <h3 className="text-xl font-bold text-white mb-6 flex items-center gap-2">
+      <div className="mt-auto pt-8">
+        <div className="border-t-2 border-white/5 animate-slide-up" style={{ animationDelay: '0.1s' }}>
+          <h3 className="text-xl font-bold text-white mb-6 mt-8 flex items-center gap-2">
           <svg className="w-6 h-6 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
           </svg>
@@ -301,33 +368,18 @@ export const RuleBuilder: React.FC = () => {
           )}
         </div>
       </div>
+    </div>
 
-      {/* 저장 버튼 */}
-      <div className="mt-10 flex justify-end">
+      {/* 하단 고정 저장 버튼 영역 */}
+      <div className="mt-8 pt-6 border-t border-white/10 flex justify-end bg-slate-900/50 -mx-6 -mb-6 px-6 py-4 rounded-b-2xl">
         <button 
           onClick={handleSaveRule}
           disabled={isSaving || !targetFolder}
-          className={`px-8 py-3.5 ${isSaving || !targetFolder ? 'bg-slate-700 cursor-not-allowed opacity-50' : 'bg-gradient-to-r from-brand-600 to-purple-600 hover:from-brand-500 hover:to-purple-500'} text-white font-bold rounded-xl shadow-lg shadow-brand-500/20 transition-all duration-300 flex items-center gap-2 group`}
+          className={`px-8 py-3 bg-gradient-to-r from-brand-600 to-purple-600 hover:from-brand-500 hover:to-purple-500 text-white font-bold rounded-xl shadow-lg transition-all flex items-center gap-2 group ${isSaving || !targetFolder ? 'opacity-50 cursor-not-allowed' : ''}`}
         >
-          {isSaving ? (
-            <span className="flex items-center gap-2">
-              <svg className="animate-spin -ml-1 mr-2 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-              </svg>
-              저장 중...
-            </span>
-          ) : (
-            <>
-              <svg className="w-5 h-5 transition-transform group-hover:scale-110" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
-              </svg>
-              규칙 저장 및 동기화
-            </>
-          )}
+          {isSaving ? '저장 중...' : '규칙 저장 및 동기화'}
         </button>
       </div>
-
     </div>
   );
 };

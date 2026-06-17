@@ -1,0 +1,21 @@
+{
+  "manifest_version": 3,
+  "name": "Outlook Smart Router",
+  "version": "1.0.0",
+  "description": "한계를 뛰어넘는 Outlook 메일 자동 분류 규칙 시스템",
+  "action": {
+    "default_title": "Outlook Smart Router 열기"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "permissions": [
+    "tabs"
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["index.html"],
+      "matches": ["https://login.microsoftonline.com/*"]
+    }
+  ]
+}

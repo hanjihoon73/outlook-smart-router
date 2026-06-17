@@ -8,8 +8,7 @@ export const msalConfig: Configuration = {
     redirectUri: "/", // 인증 후 돌아올 주소
   },
   cache: {
-    cacheLocation: "sessionStorage", // 'localStorage' 또는 'sessionStorage'
-    storeAuthStateInCookie: false, // IE11이나 구형 Edge를 위한 설정 (일반적으로 false)
+    cacheLocation: "sessionStorage", // 'sessionStorage' 또는 'localStorage'
   },
 };
 

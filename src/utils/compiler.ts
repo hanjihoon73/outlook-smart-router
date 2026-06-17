@@ -1,4 +1,4 @@
-export type Field = 'from' | 'subject' | 'body';
+export type Field = 'from' | 'subject' | 'body' | 'to' | 'cc';
 export type Operator = 'contains' | 'equals';
 
 export interface Condition {
@@ -64,6 +64,14 @@ export const compileToGraphRules = (state: RuleBuilderState, ruleNamePrefix: str
         case 'body':
           conditionsPayload.bodyContains = conditionsPayload.bodyContains 
             ? [...conditionsPayload.bodyContains, val] 
+            : [val];
+          break;
+          
+        case 'to':
+        case 'cc':
+          // MS Graph API는 받는 사람과 참조 문자열 매칭을 recipientContains로 통합 검색 지원합니다.
+          conditionsPayload.recipientContains = conditionsPayload.recipientContains 
+            ? [...conditionsPayload.recipientContains, val] 
             : [val];
           break;
       }
