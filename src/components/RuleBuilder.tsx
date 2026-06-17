@@ -187,7 +187,7 @@ export const RuleBuilder: React.FC<RuleBuilderProps> = ({ rule, onSaveSuccess, u
   };
 
   return (
-    <div className="w-full glass-panel rounded-2xl p-6 md:p-8 animate-fade-in text-left flex flex-col h-full">
+    <div className="w-full glass-panel rounded-2xl p-6 md:p-8 animate-fade-in text-left flex flex-col min-h-full h-fit">
       <div className="mb-6 border-b border-white/10 pb-6">
         <h2 className="text-2xl font-bold text-white tracking-tight flex items-center gap-2 mb-4">
           <svg className="w-6 h-6 text-brand-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
