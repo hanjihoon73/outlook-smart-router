@@ -13,8 +13,11 @@ export interface ConditionGroup {
   conditions: Condition[];
 }
 
+export type ActionType = 'moveToFolder' | 'delete' | 'permanentDelete';
+
 export interface RuleBuilderState {
   groups: ConditionGroup[];
+  actionType: ActionType;
   targetFolder: string;
 }
 
@@ -24,7 +27,7 @@ export interface RuleBuilderState {
  * UI의 여러 'OR' 그룹(ConditionGroup)들은 각각 독립된 여러 개의 규칙(Rule)으로 쪼개서 생성합니다.
  */
 export const compileToGraphRules = (state: RuleBuilderState, ruleNamePrefix: string = "SmartRouter_") => {
-  if (!state.targetFolder) {
+  if (state.actionType === 'moveToFolder' && !state.targetFolder) {
     throw new Error("이동할 대상 폴더가 선택되지 않았습니다.");
   }
 
@@ -77,15 +80,23 @@ export const compileToGraphRules = (state: RuleBuilderState, ruleNamePrefix: str
       }
     });
 
+    // 액션 타입에 따른 분기 처리
+    let ruleActions: any = {};
+    if (state.actionType === 'delete') {
+      ruleActions = { delete: true };
+    } else if (state.actionType === 'permanentDelete') {
+      ruleActions = { permanentDelete: true };
+    } else {
+      ruleActions = { moveToFolder: state.targetFolder };
+    }
+
     // 해당 그룹을 위한 단일 Graph API 규칙 조각 생성
     const rulePayload = {
       displayName: `${ruleNamePrefix}Group_${index + 1}`,
       sequence: 10 + index, // 실행 우선순위 (임의 지정)
       isEnabled: true,
       conditions: conditionsPayload,
-      actions: {
-        moveToFolder: state.targetFolder
-      }
+      actions: ruleActions
     };
 
     graphRules.push(rulePayload);

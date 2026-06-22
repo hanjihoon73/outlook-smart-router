@@ -161,10 +161,30 @@ export const Dashboard: React.FC = () => {
                   </div>
                 </div>
                 <div className="flex items-center gap-2 text-xs text-slate-400">
-                  <svg className="w-3 h-3 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
-                  </svg>
-                  <span className="truncate">{rule.target_folder_name || '폴더 지정 안됨'}</span>
+                  {(!rule.action_type || rule.action_type === 'moveToFolder') && (
+                    <>
+                      <svg className="w-3 h-3 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+                      </svg>
+                      <span className="truncate">이동: {rule.target_folder_name || '폴더 지정 안됨'}</span>
+                    </>
+                  )}
+                  {rule.action_type === 'delete' && (
+                    <>
+                      <svg className="w-3 h-3 text-orange-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                      </svg>
+                      <span className="truncate text-orange-400/80">삭제 (휴지통으로 이동)</span>
+                    </>
+                  )}
+                  {rule.action_type === 'permanentDelete' && (
+                    <>
+                      <svg className="w-3 h-3 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                      </svg>
+                      <span className="truncate text-red-400/80">완전 삭제 (복구 불가)</span>
+                    </>
+                  )}
                 </div>
               </div>
             ))

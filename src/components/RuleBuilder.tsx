@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useMsal } from "@azure/msal-react";
 import { getAccessToken, getMailFolders, createMessageRule, deleteMessageRule } from '../api/graph';
-import { compileToGraphRules } from '../utils/compiler';
+import { compileToGraphRules, type ActionType } from '../utils/compiler';
 import { supabase } from '../api/supabase';
 
 // DNF 방식의 그룹 관리를 위한 데이터 구조
@@ -45,7 +45,8 @@ export const RuleBuilder: React.FC<RuleBuilderProps> = ({ rule, onSaveSuccess, u
     ]
   );
 
-  // 폴더 이동 액션 상태
+  // 액션 상태
+  const [actionType, setActionType] = useState<ActionType>(rule?.action_type || 'moveToFolder');
   const [targetFolder, setTargetFolder] = useState<string>(rule?.target_folder_id || '');
 
   // 컴포넌트 마운트 시 실제 사용자의 메일 폴더 목록 불러오기
@@ -125,7 +126,7 @@ export const RuleBuilder: React.FC<RuleBuilderProps> = ({ rule, onSaveSuccess, u
     try {
       setIsSaving(true);
       // 1. UI 상태를 MS Graph API가 이해할 수 있는 순수 AND 규칙 배열로 변환
-      const graphRules = compileToGraphRules({ groups, targetFolder });
+      const graphRules = compileToGraphRules({ groups, actionType, targetFolder });
       
       if (graphRules.length === 0) {
         alert("저장할 유효한 규칙이 없습니다. 조건을 입력해 주세요.");
@@ -165,6 +166,7 @@ export const RuleBuilder: React.FC<RuleBuilderProps> = ({ rule, onSaveSuccess, u
         groups: groups,
         target_folder_id: targetFolder,
         target_folder_name: targetFolderName,
+        action_type: actionType,
         is_active: true,
         graph_rule_ids: generatedGraphIds // 토글 동작을 위해 ID 목록 저장
       };
@@ -333,34 +335,64 @@ export const RuleBuilder: React.FC<RuleBuilderProps> = ({ rule, onSaveSuccess, u
         </h3>
         
         <div className="p-6 rounded-2xl border border-emerald-500/30 bg-emerald-500/5 shadow-inner">
-          <div className="flex flex-wrap md:flex-nowrap items-center gap-4">
-            <div className="flex items-center gap-2 text-emerald-300 font-medium whitespace-nowrap bg-emerald-500/10 px-4 py-2 rounded-lg">
-              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
-              </svg>
-              다음 폴더로 이동:
-            </div>
+          <div className="flex flex-col gap-4">
             
-            <select 
-              value={targetFolder}
-              onChange={(e) => setTargetFolder(e.target.value)}
-              className="flex-1 bg-slate-900 border border-slate-700 text-slate-200 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-emerald-500 outline-none transition-all"
-            >
-              <option value="" disabled>
-                {loadingFolders 
-                  ? "폴더 목록 불러오는 중..." 
-                  : folderError 
-                    ? `오류 발생 (클릭 불가)` 
-                    : "이동할 폴더를 선택하세요..."}
-              </option>
-              {folders.map((folder) => (
-                <option key={folder.id} value={folder.id}>
-                  {folder.displayName}
-                </option>
-              ))}
-            </select>
+            {/* 액션 타입 선택 라디오 버튼 */}
+            <div className="flex flex-wrap gap-3 mb-2">
+              <label className={`cursor-pointer px-4 py-2 rounded-xl border flex items-center gap-2 transition-all ${actionType === 'moveToFolder' ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-300 font-bold shadow-sm' : 'bg-slate-800/50 border-slate-700 text-slate-400 hover:bg-slate-800'}`}>
+                <input type="radio" name="actionType" value="moveToFolder" checked={actionType === 'moveToFolder'} onChange={() => setActionType('moveToFolder')} className="hidden" />
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+                </svg>
+                지정된 폴더로 이동
+              </label>
+
+              <label className={`cursor-pointer px-4 py-2 rounded-xl border flex items-center gap-2 transition-all ${actionType === 'delete' ? 'bg-orange-500/20 border-orange-500/50 text-orange-300 font-bold shadow-sm' : 'bg-slate-800/50 border-slate-700 text-slate-400 hover:bg-slate-800'}`}>
+                <input type="radio" name="actionType" value="delete" checked={actionType === 'delete'} onChange={() => setActionType('delete')} className="hidden" />
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
+                삭제 (지운 편지함)
+              </label>
+
+              <label className={`cursor-pointer px-4 py-2 rounded-xl border flex items-center gap-2 transition-all ${actionType === 'permanentDelete' ? 'bg-red-500/20 border-red-500/50 text-red-300 font-bold shadow-sm' : 'bg-slate-800/50 border-slate-700 text-slate-400 hover:bg-slate-800'}`}>
+                <input type="radio" name="actionType" value="permanentDelete" checked={actionType === 'permanentDelete'} onChange={() => setActionType('permanentDelete')} className="hidden" />
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                </svg>
+                완전 삭제 (복구 불가)
+              </label>
+            </div>
+
+            {/* 폴더 선택 뷰 (moveToFolder 일 때만 노출) */}
+            {actionType === 'moveToFolder' && (
+              <div className="flex flex-wrap md:flex-nowrap items-center gap-4 bg-black/20 p-4 rounded-xl border border-white/5">
+                <div className="text-slate-300 font-medium whitespace-nowrap px-2">
+                  대상 폴더:
+                </div>
+                
+                <select 
+                  value={targetFolder}
+                  onChange={(e) => setTargetFolder(e.target.value)}
+                  className="flex-1 bg-slate-900 border border-slate-700 text-slate-200 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-emerald-500 outline-none transition-all"
+                >
+                  <option value="" disabled>
+                    {loadingFolders 
+                      ? "폴더 목록 불러오는 중..." 
+                      : folderError 
+                        ? `오류 발생 (클릭 불가)` 
+                        : "이동할 폴더를 선택하세요..."}
+                  </option>
+                  {folders.map((folder) => (
+                    <option key={folder.id} value={folder.id}>
+                      {folder.displayName}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
           </div>
-          {folderError && (
+          {folderError && actionType === 'moveToFolder' && (
             <div className="mt-3 text-sm text-red-400 bg-red-400/10 px-4 py-2 rounded-lg border border-red-400/20">
               폴더 로드 오류: {folderError}
               <br/>새로고침하여 다시 로그인 승인을 받아주세요.
@@ -374,8 +406,8 @@ export const RuleBuilder: React.FC<RuleBuilderProps> = ({ rule, onSaveSuccess, u
       <div className="mt-8 pt-6 border-t border-white/10 flex justify-end bg-slate-900/50 -mx-6 -mb-6 px-6 py-4 rounded-b-2xl">
         <button 
           onClick={handleSaveRule}
-          disabled={isSaving || !targetFolder}
-          className={`px-8 py-3 bg-gradient-to-r from-brand-600 to-purple-600 hover:from-brand-500 hover:to-purple-500 text-white font-bold rounded-xl shadow-lg transition-all flex items-center gap-2 group ${isSaving || !targetFolder ? 'opacity-50 cursor-not-allowed' : ''}`}
+          disabled={isSaving || (actionType === 'moveToFolder' && !targetFolder)}
+          className={`px-8 py-3 bg-gradient-to-r from-brand-600 to-purple-600 hover:from-brand-500 hover:to-purple-500 text-white font-bold rounded-xl shadow-lg transition-all flex items-center gap-2 group ${isSaving || (actionType === 'moveToFolder' && !targetFolder) ? 'opacity-50 cursor-not-allowed' : ''}`}
         >
           {isSaving ? '저장 중...' : '규칙 저장 및 동기화'}
         </button>
